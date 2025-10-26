@@ -279,12 +279,12 @@ wisecow-project/
 │   ├── deployment.yaml
 │   ├── service.yaml
 │   ├── ingress.yaml
-│   └── kubearmor-policies/
-│       ├── process-restriction.yaml
-│       ├── file-access-control.yaml
-│       ├── network-restriction.yaml
-│       ├── capabilities-restriction.yaml
-│       └── audit-policy.yaml
+│──── kubearmor-policies/
+│     ├── process-restriction.yaml
+│     ├── file-access-control.yaml
+│     ├── network-restriction.yaml
+│     ├── capabilities-restriction.yaml
+│     └── audit-policy.yaml
 └── README.md
 ```
 
