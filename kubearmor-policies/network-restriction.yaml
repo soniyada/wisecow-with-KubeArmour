@@ -1,0 +1,21 @@
+apiVersion: security.kubearmor.com/v1
+kind: KubeArmorPolicy
+metadata:
+  name: wisecow-restrict-network-access
+  namespace: default
+spec:
+  severity: 6
+  selector:
+    matchLabels:
+      app: wisecow
+  network:
+    matchProtocols:
+    # Block raw socket access (used in network scanning)
+    - protocol: raw
+      action: Block
+    
+    # Block ICMP (ping/traceroute - reconnaissance)
+    - protocol: icmp
+      action: Block
+  
+  message: "Alert: Suspicious network activity detected in wisecow container"
