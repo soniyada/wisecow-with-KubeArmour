@@ -12,30 +12,13 @@ spec:
     matchCapabilities:
     # Block dangerous capabilities
     - capability: net_raw
-      action: Block
-    
     - capability: sys_admin
-      action: Block
-    
     - capability: sys_ptrace
-      action: Block
-    
     - capability: sys_module
-      action: Block
-    
     - capability: dac_override
-      action: Block
-    
     - capability: dac_read_search
-      action: Block
-    
     - capability: chown
-      action: Block
-    
     - capability: setuid
-      action: Block
-    
     - capability: setgid
-      action: Block
   
-  message: "Alert: Attempted use of restricted capability in wisecow container"
+  action: Block
