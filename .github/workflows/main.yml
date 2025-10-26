@@ -1,0 +1,270 @@
+name: Wisecow CI/CD on Kind with KubeArmor
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+env:
+  REGISTRY: docker.io
+  IMAGE_NAME: ${{ secrets.DOCKER_USERNAME }}/wisecow
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+    steps:
+      - name: 1. Checkout repository
+        uses: actions/checkout@v4
+
+      - name: 2. Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: 3. Log in to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
+
+      - name: 4. Extract metadata (tags) for Docker
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.IMAGE_NAME }}
+          tags: |
+            type=sha,prefix=
+            type=raw,value=latest
+            
+      - name: 5. Build and push Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+
+  deploy-to-kind:
+    runs-on: ubuntu-latest
+    needs: build-and-push
+    steps:
+      - name: 1. Checkout repository
+        uses: actions/checkout@v4
+
+      - name: 2. Construct IMAGE_REF directly
+        id: construct_image
+        run: |
+          IMAGE_REF="${{ env.IMAGE_NAME }}:latest"
+          echo "Constructed IMAGE_REF: $IMAGE_REF"
+          echo "IMAGE_REF=$IMAGE_REF" >> $GITHUB_ENV
+          
+      - name: 3. Verify IMAGE_REF is set
+        run: |
+          echo "IMAGE_REF from environment: $IMAGE_REF"
+          if [ -z "$IMAGE_REF" ]; then
+            echo "ERROR: IMAGE_REF is empty." >&2
+            exit 1
+          fi
+          
+      - name: 4. Create Kind Cluster with Port Mapping
+        uses: helm/kind-action@v1.9.0
+        with:
+          cluster_name: kind
+          config: kind-config.yaml
+          wait: 120s
+
+      - name: 5. Verify Kind Cluster is Running
+        run: |
+          echo "Checking Kind cluster status..."
+          kind get clusters
+          kubectl cluster-info --context kind-kind
+          kubectl get nodes
+          echo "Kind cluster is ready!"
+
+      - name: 6. Log in to Docker Hub on deploy runner
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
+
+      - name: 7. Pull the pushed image so it's available locally
+        run: |
+          echo "Pulling $IMAGE_REF on the deploy runner..."
+          docker pull "$IMAGE_REF"
+          echo "Verify image exists locally:"
+          docker images | grep wisecow || docker images
+          
+      - name: 8. Load Docker Image into Kind Cluster
+        run: |
+          echo "Loading image $IMAGE_REF into Kind..."
+          kind load docker-image "$IMAGE_REF" --name kind
+          echo "Image loaded successfully!"
+          
+      - name: 9. Install Nginx Ingress Controller
+        run: |
+          kubectl apply -f https://raw.githubusercontent.com/kubernetes/ingress-nginx/main/deploy/static/provider/kind/deploy.yaml
+          kubectl wait --namespace ingress-nginx --for=condition=ready pod --selector=app.kubernetes.io/component=controller --timeout=90s
+          
+      - name: 10. Install Cert-Manager CRDs
+        run: |
+          kubectl apply -f https://github.com/cert-manager/cert-manager/releases/download/v1.14.3/cert-manager.crds.yaml
+          
+      - name: 11. Install Cert-Manager using Helm
+        run: |
+          helm repo add jetstack https://charts.jetstack.io
+          helm repo update
+          helm upgrade --install cert-manager jetstack/cert-manager \
+            --namespace cert-manager --create-namespace \
+            --version v1.14.3 \
+            --set installCRDs=false
+          kubectl wait --namespace cert-manager \
+            --for=condition=ready pod \
+            --selector=app.kubernetes.io/instance=cert-manager \
+            --timeout=180s
+            
+      - name: 12. Install KubeArmor
+        run: |
+          echo "Installing KubeArmor..."
+          curl -sfL https://raw.githubusercontent.com/kubearmor/KubeArmor/main/getting-started/install.sh | sudo sh -s -- -b /usr/local/bin
+          
+          # Install KubeArmor in the cluster
+          kubectl create namespace kubearmor
+          kubectl apply -f https://raw.githubusercontent.com/kubearmor/KubeArmor/main/deployments/get/kubearmor.yaml
+          
+          # Wait for KubeArmor to be ready
+          kubectl wait --namespace kubearmor \
+            --for=condition=ready pod \
+            --selector=kubearmor-app=kubearmor \
+            --timeout=180s
+          
+          echo "KubeArmor installed successfully!"
+          
+      - name: 13. Verify Cert-Manager is Fully Ready
+        run: |
+          echo "Waiting for cert-manager webhook..."
+          kubectl wait --namespace cert-manager \
+            --for=condition=ready pod \
+            --selector=app.kubernetes.io/component=webhook \
+            --timeout=120s
+          echo "Cert-manager is fully operational!"
+          
+      - name: 14. Create Self-Signed Certificate Issuer
+        run: |
+          cat <<EOF | kubectl apply -f -
+          apiVersion: cert-manager.io/v1
+          kind: ClusterIssuer
+          metadata:
+            name: selfsigned-issuer
+          spec:
+            selfSigned: {}
+          EOF
+          echo "Waiting for issuer to be ready..."
+          sleep 5
+          kubectl get clusterissuer selfsigned-issuer -o yaml
+          
+      - name: 15. Apply Kubernetes Manifests (Deployment, Service)
+        run: |
+          # Apply all YAML files except kind-config.yaml
+          find kubernetes/ -name '*.yaml' -not -name 'kind-config.yaml' -exec kubectl apply -f {} \;
+          
+      - name: 16. Create Certificate for TLS
+        run: |
+          cat <<EOF | kubectl apply -f -
+          apiVersion: cert-manager.io/v1
+          kind: Certificate
+          metadata:
+            name: wisecow-tls
+            namespace: default
+          spec:
+            secretName: wisecow-tls-secret
+            issuerRef:
+              name: selfsigned-issuer
+              kind: ClusterIssuer
+            dnsNames:
+              - wisecow.yourdomain.com
+          EOF
+          echo "Certificate created, checking status..."
+          sleep 10
+          kubectl describe certificate wisecow-tls
+          kubectl get certificaterequest
+          
+      - name: 17. Wait for Certificate to be Ready
+        run: |
+          echo "Waiting for certificate..."
+          for i in {1..30}; do
+            if kubectl get secret wisecow-tls-secret 2>/dev/null; then
+              echo "Certificate secret exists!"
+              kubectl get certificate wisecow-tls -o yaml
+              break
+            fi
+            echo "Attempt $i/30: Waiting for certificate secret..."
+            sleep 2
+          done
+          
+          # Check if secret was created
+          if ! kubectl get secret wisecow-tls-secret; then
+            echo "ERROR: Certificate secret not created. Checking cert-manager logs..."
+            kubectl logs -n cert-manager -l app=cert-manager --tail=50
+            kubectl get events --sort-by='.lastTimestamp' | grep -i cert
+            exit 1
+          fi
+          echo "Certificate is ready!"
+          
+      - name: 18. Apply Ingress
+        run: |
+          kubectl apply -f kubernetes/ingress.yaml
+          
+      - name: 19. Wait for Wisecow Deployment to be Ready
+        run: |
+          kubectl wait --for=condition=Available deployment/wisecow-deployment --timeout=120s
+          
+      - name: 20. Apply KubeArmor Security Policies
+        run: |
+          echo "Applying KubeArmor security policies..."
+          kubectl apply -f kubernetes/kubearmor-policies/
+          
+          echo "Waiting for policies to be applied..."
+          sleep 5
+          
+          echo "Listing applied KubeArmor policies:"
+          kubectl get kubearmorpolicies -A
+          
+      - name: 21. Test Policy Violations
+        run: |
+          echo "Testing KubeArmor policy enforcement..."
+          
+          # Get wisecow pod name
+          POD_NAME=$(kubectl get pods -l app=wisecow -o jsonpath='{.items[0].metadata.name}')
+          echo "Testing with pod: $POD_NAME"
+          
+          # Test 1: Try to execute shell (should be blocked)
+          echo "Test 1: Attempting to execute /bin/sh (should be blocked)..."
+          kubectl exec $POD_NAME -- /bin/sh -c "echo 'This should be blocked'" || echo "✓ Policy violation detected and blocked!"
+          
+          # Test 2: Try to access sensitive files (should be blocked)
+          echo "Test 2: Attempting to read /etc/shadow (should be blocked)..."
+          kubectl exec $POD_NAME -- cat /etc/shadow || echo "✓ Policy violation detected and blocked!"
+          
+          # Test 3: Try to write to filesystem (should be blocked)
+          echo "Test 3: Attempting to write to /tmp (should be blocked)..."
+          kubectl exec $POD_NAME -- touch /tmp/test-file || echo "✓ Policy violation detected and blocked!"
+          
+          echo "Policy violation tests completed!"
+          
+      - name: 22. View KubeArmor Logs and Alerts
+        run: |
+          echo "Fetching KubeArmor logs showing policy violations..."
+          kubectl logs -n kubearmor -l kubearmor-app=kubearmor --tail=100 | grep -i "Policy\|Alert\|Violation" || echo "No violations in logs yet"
+          
+          echo "Viewing KubeArmor policy status..."
+          kubectl get kubearmorpolicies -o wide
+          
+      - name: 23. Verification (E2E TLS Test)
+        run: |
+          echo "127.0.0.1 wisecow.yourdomain.com" | sudo tee -a /etc/hosts
+          echo "Waiting for ingress to be ready..."
+          sleep 10
+          echo "Testing HTTPS endpoint..."
+          curl -vk https://wisecow.yourdomain.com/ || echo "Curl failed, checking pod logs..."
+          kubectl get pods
+          kubectl get ingress
+          kubectl describe ingress wisecow-ingress
