@@ -1,0 +1,41 @@
+apiVersion: security.kubearmor.com/v1
+kind: KubeArmorPolicy
+metadata:
+  name: wisecow-restrict-capabilities
+  namespace: default
+spec:
+  severity: 8
+  selector:
+    matchLabels:
+      app: wisecow
+  capabilities:
+    matchCapabilities:
+    # Block dangerous capabilities
+    - capability: net_raw
+      action: Block
+    
+    - capability: sys_admin
+      action: Block
+    
+    - capability: sys_ptrace
+      action: Block
+    
+    - capability: sys_module
+      action: Block
+    
+    - capability: dac_override
+      action: Block
+    
+    - capability: dac_read_search
+      action: Block
+    
+    - capability: chown
+      action: Block
+    
+    - capability: setuid
+      action: Block
+    
+    - capability: setgid
+      action: Block
+  
+  message: "Alert: Attempted use of restricted capability in wisecow container"
