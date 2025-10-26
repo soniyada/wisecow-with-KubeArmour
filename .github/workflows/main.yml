@@ -229,7 +229,7 @@ jobs:
       - name: 20. Apply KubeArmor Security Policies
         run: |
           echo "Applying KubeArmor security policies..."
-          kubectl apply -f kubernetes/kubearmor-policies/
+          kubectl apply -f kubearmor-policies/
           
           echo "Waiting for policies to be applied..."
           sleep 5
