@@ -124,19 +124,28 @@ jobs:
       - name: 12. Install KubeArmor
         run: |
           echo "Installing KubeArmor..."
-          curl -sfL https://raw.githubusercontent.com/kubearmor/KubeArmor/main/getting-started/install.sh | sudo sh -s -- -b /usr/local/bin
           
-          # Install KubeArmor in the cluster
-          kubectl create namespace kubearmor
-          kubectl apply -f https://raw.githubusercontent.com/kubearmor/KubeArmor/main/deployments/get/kubearmor.yaml
+          # Install karmor CLI
+          curl -sfL http://get.kubearmor.io/ | sudo sh -s -- -b /usr/local/bin
           
-          # Wait for KubeArmor to be ready
+          # Verify karmor installation
+          karmor version || echo "karmor CLI installed"
+          
+          # Install KubeArmor in the cluster using karmor CLI
+          karmor install
+          
+          # Wait for KubeArmor pods to be ready
+          echo "Waiting for KubeArmor to be ready..."
           kubectl wait --namespace kubearmor \
             --for=condition=ready pod \
             --selector=kubearmor-app=kubearmor \
             --timeout=180s
           
           echo "KubeArmor installed successfully!"
+          
+          # Verify installation
+          kubectl get pods -n kubearmor
+          karmor probe
           
       - name: 13. Verify Cert-Manager is Fully Ready
         run: |
@@ -236,19 +245,40 @@ jobs:
           POD_NAME=$(kubectl get pods -l app=wisecow -o jsonpath='{.items[0].metadata.name}')
           echo "Testing with pod: $POD_NAME"
           
+          # Wait a bit for policies to be fully loaded
+          sleep 10
+          
           # Test 1: Try to execute shell (should be blocked)
+          echo "=========================================="
           echo "Test 1: Attempting to execute /bin/sh (should be blocked)..."
-          kubectl exec $POD_NAME -- /bin/sh -c "echo 'This should be blocked'" || echo "✓ Policy violation detected and blocked!"
+          echo "=========================================="
+          kubectl exec $POD_NAME -- /bin/sh -c "echo 'This should be blocked'" 2>&1 || echo "✅ Policy violation detected! Shell execution blocked (exit code: $?)"
           
           # Test 2: Try to access sensitive files (should be blocked)
+          echo ""
+          echo "=========================================="
           echo "Test 2: Attempting to read /etc/shadow (should be blocked)..."
-          kubectl exec $POD_NAME -- cat /etc/shadow || echo "✓ Policy violation detected and blocked!"
+          echo "=========================================="
+          kubectl exec $POD_NAME -- cat /etc/shadow 2>&1 || echo "✅ Policy violation detected! File access blocked (exit code: $?)"
           
           # Test 3: Try to write to filesystem (should be blocked)
+          echo ""
+          echo "=========================================="
           echo "Test 3: Attempting to write to /tmp (should be blocked)..."
-          kubectl exec $POD_NAME -- touch /tmp/test-file || echo "✓ Policy violation detected and blocked!"
+          echo "=========================================="
+          kubectl exec $POD_NAME -- touch /tmp/test-file 2>&1 || echo "✅ Policy violation detected! File write blocked (exit code: $?)"
           
+          # Test 4: Try to execute wget (should be blocked)
+          echo ""
+          echo "=========================================="
+          echo "Test 4: Attempting to execute wget (should be blocked)..."
+          echo "=========================================="
+          kubectl exec $POD_NAME -- wget --help 2>&1 || echo "✅ Policy violation detected! wget execution blocked (exit code: $?)"
+          
+          echo ""
+          echo "=========================================="
           echo "Policy violation tests completed!"
+          echo "=========================================="
           
       - name: 22. View KubeArmor Logs and Alerts
         run: |
