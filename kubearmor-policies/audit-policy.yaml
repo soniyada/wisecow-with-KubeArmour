@@ -1,0 +1,17 @@
+apiVersion: security.kubearmor.com/v1
+kind: KubeArmorPolicy
+metadata:
+  name: wisecow-audit-all-processes
+  namespace: default
+spec:
+  severity: 3
+  selector:
+    matchLabels:
+      app: wisecow
+  process:
+    matchPaths:
+    - path: /*
+      recursive: true
+      action: Audit
+  
+  message: "Audit: Process execution detected in wisecow container"
