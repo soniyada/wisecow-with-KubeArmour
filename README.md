@@ -288,3 +288,10 @@ wisecow-project/
 └── README.md
 ```
 
+
+## Screenshots of KubeArmour Results
+
+<img src="https://github.com/soniyada/wisecow-with-KubeArmour/blob/main/screenshots/screenshot-2025-10-26_16-44-31.png" alt="Banner" />
+<img src="https://github.com/soniyada/wisecow-with-KubeArmour/blob/main/screenshots/screenshot-2025-10-26_16-44-58.png" alt="Banner" />
+<img src="https://github.com/soniyada/wisecow-with-KubeArmour/blob/main/screenshots/screenshot-2025-10-26_16-46-05.png" alt="Banner" />
+
