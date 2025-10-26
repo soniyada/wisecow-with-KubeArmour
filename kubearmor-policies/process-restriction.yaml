@@ -12,40 +12,25 @@ spec:
     matchPaths:
     # Block all shell interpreters
     - path: /bin/sh
-      action: Block
     - path: /bin/bash
-      action: Block
     - path: /bin/dash
-      action: Block
     - path: /usr/bin/sh
-      action: Block
     - path: /usr/bin/bash
-      action: Block
     
     # Block command execution utilities
     - path: /usr/bin/wget
-      action: Block
     - path: /usr/bin/curl
-      action: Block
     - path: /bin/nc
-      action: Block
     - path: /bin/netcat
-      action: Block
     
     # Block package managers (prevent malware installation)
     - path: /usr/bin/apt
-      action: Block
     - path: /usr/bin/apt-get
-      action: Block
     - path: /usr/bin/yum
-      action: Block
     - path: /usr/bin/dpkg
-      action: Block
     
     # Block privilege escalation tools
     - path: /usr/bin/sudo
-      action: Block
     - path: /bin/su
-      action: Block
     
-  message: "Alert: Attempted execution of blocked process in wisecow container"
+  action: Block
