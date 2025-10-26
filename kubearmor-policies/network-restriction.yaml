@@ -12,10 +12,8 @@ spec:
     matchProtocols:
     # Block raw socket access (used in network scanning)
     - protocol: raw
-      action: Block
     
     # Block ICMP (ping/traceroute - reconnaissance)
     - protocol: icmp
-      action: Block
   
-  message: "Alert: Suspicious network activity detected in wisecow container"
+  action: Block
