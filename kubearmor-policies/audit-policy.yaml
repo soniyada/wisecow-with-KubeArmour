@@ -9,9 +9,10 @@ spec:
     matchLabels:
       app: wisecow
   process:
-    matchPaths:
-    - path: /*
+    matchDirectories:
+    - dir: /usr/bin/
       recursive: true
-      action: Audit
+    - dir: /bin/
+      recursive: true
   
-  message: "Audit: Process execution detected in wisecow container"
+  action: Audit
