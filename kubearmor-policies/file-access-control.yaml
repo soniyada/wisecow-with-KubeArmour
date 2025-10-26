@@ -1,0 +1,71 @@
+apiVersion: security.kubearmor.com/v1
+kind: KubeArmorPolicy
+metadata:
+  name: wisecow-restrict-file-access
+  namespace: default
+spec:
+  severity: 7
+  selector:
+    matchLabels:
+      app: wisecow
+  file:
+    matchDirectories:
+    # Block access to system configuration directories
+    - dir: /etc/
+      recursive: true
+      readOnly: false
+      action: Block
+    
+    # Block access to system binaries
+    - dir: /bin/
+      recursive: true
+      readOnly: false
+      action: Block
+    
+    - dir: /sbin/
+      recursive: true
+      readOnly: false
+      action: Block
+    
+    - dir: /usr/bin/
+      recursive: true
+      readOnly: false
+      action: Block
+    
+    - dir: /usr/sbin/
+      recursive: true
+      readOnly: false
+      action: Block
+    
+    # Block write access to tmp (prevent malware staging)
+    - dir: /tmp/
+      recursive: true
+      readOnly: false
+      action: Block
+    
+    # Block access to proc filesystem (information disclosure)
+    - dir: /proc/
+      recursive: true
+      readOnly: false
+      action: Block
+    
+    matchPaths:
+    # Block access to sensitive system files
+    - path: /etc/passwd
+      readOnly: false
+      action: Block
+    
+    - path: /etc/shadow
+      readOnly: true  # Block even read access
+      action: Block
+    
+    - path: /etc/sudoers
+      readOnly: true
+      action: Block
+    
+    - path: /root/.ssh/
+      recursive: true
+      readOnly: true
+      action: Block
+    
+  message: "Alert: Unauthorized file access attempt in wisecow container"
